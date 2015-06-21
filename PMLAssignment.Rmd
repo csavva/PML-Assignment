@@ -1,0 +1,107 @@
+---
+title: "PML Assignment"
+output: html_document
+---
+
+Practical Machine Learning - Prediction Assignment Writeup
+==========================================================
+
+For this assignment the provided data are analysed to determine what activity an individual performs. This was done using caret and randomForest, which allowed to generate correct answers for each of the 20 test data cases provided in this assignment.  For reproduceability, the seed code is also included
+
+
+```{r}
+library(Hmisc)
+library(caret)
+library(randomForest)
+library(foreach)
+library(doParallel)
+set.seed(4242)
+options(warn=-1)
+```
+
+Firstly, the data is loaded both from the provided training and test data provided by the course assignment guideline. Some values contained a "#DIV/0!" that was replaced with an NA value.
+
+```{r}
+training_data <- read.csv("pml-training.csv", na.strings=c("#DIV/0!") )
+evaluation_data <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!") )
+```
+
+All 8 columns were casted to the end to be numeric.
+
+```{r}
+for(i in c(8:ncol(training_data)-1)) 
+  {
+    training_data[,i] = as.numeric(as.character(training_data[,i]))
+  }
+
+for(i in c(8:ncol(evaluation_data)-1)) 
+  {
+    evaluation_data[,i] = as.numeric(as.character(evaluation_data[,i]))
+  }
+```
+
+Some columns were mostly blank which did not contribute well to the prediction. Therefore a feature set was chosen such that only complete columns were included. The user name, timestamps and windows were also removed.  
+
+Determine and display out feature set.
+
+```{r}
+feature_set <- colnames(training_data[colSums(is.na(training_data)) == 0])[-(1:7)]
+model_data <- training_data[feature_set]
+feature_set
+```
+
+The model data was therefore built from the feature set.
+
+```{r}
+indx <- createDataPartition(y=model_data$classe, p=0.75, list=FALSE )
+training <- model_data[indx,]
+testing <- model_data[-indx,]
+```
+
+Five random forests with 150 trees each were built using parallel processing to speedup the processing.
+
+```{r}
+registerDoParallel()
+x <- training[-ncol(training)]
+y <- training$classe
+
+rf <- foreach(ntree=rep(150, 6), .combine=randomForest::combine, .packages='randomForest') %dopar% {
+randomForest(x, y, ntree=ntree) 
+}
+```
+
+Standard error reports for each data set.
+```{r}
+predictions1 <- predict(rf, newdata=training)
+confusionMatrix(predictions1,training$classe)
+
+
+predictions2 <- predict(rf, newdata=testing)
+confusionMatrix(predictions2,testing$classe)
+```
+
+Conclusions and Test Data Submit
+--------------------------------
+
+As can be seen from the confusion matrix this model is very accurate. Also also submitted cases were correct.
+
+The following code PMLwas used to create the submission files.
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+
+x <- evaluation_data
+x <- x[feature_set[feature_set!='classe']]
+answers <- predict(rf, newdata=x)
+
+answers
+
+pml_write_files(answers)
+```
